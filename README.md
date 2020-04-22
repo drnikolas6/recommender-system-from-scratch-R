@@ -11,3 +11,7 @@ Article 19 (December 2015), 19 pages. DOI=http://dx.doi.org/10.1145/2827872
 The idea of the project is to create a recemmender system from scrath in R. The recommendation will consider both content based
 and collaborative filtering methods (user based and item based). Eventualy the system is evaluated using the Recommender System package
 that already exists in R repository.
+
+train-test-1.R : Is an evaluation of the existing recommender system
+train-test-2.R : Is an evaluation of the recommender system methods built form scratch
+The code includes some commented lines of code that were not deleted so they can be used in alternative methods or they were used to test certain issues.
