@@ -1,0 +1,326 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+######Attempt on user based collaborative filtering######
+
+#The idea behind that is to find the user similarities. The metric that is used is 
+#Cosine Similarity and the process is done by calculating the dot product between
+#users' profile vectors and dividing that by the product of the vectors' 
+#norms(magnitudes).
+#The values' range is [-1,1], representing low to high similarity.
+#Next we proceed to the calculation of the dot product of the transposed profile 
+#matrix with profile matrix to get the dot products that we need.
+sim=t(profile_matrix_2)%*%profile_matrix_2
+#To get the norm of each vector, we fist isolate the diagonal values of sim matrix
+#that is the dot products of every vector with itself and then we apply the squareroot
+#function.
+diag_elem=diag(sim)
+#we shorten the procedure by applying squareroot and dot product of the diagonal 
+#elements in one line to receive a matrix containing each pair of vectors' norms 
+#product
+norm_elem=sqrt(diag_elem)%*%t(sqrt(diag_elem))
+#And lastly we divide the similarities with the norms to have the cosine similarities
+cos_sim=sim/norm_elem
+cos_sim[1:4,1:4] #check
+```
+
+```{r}
+####Build recommender function for user based filtering####
+
+#We attempt to build a function that will receive the cosine similarity matrix,
+#the profile matrix wich contains the ratings of every user(columns) for each 
+#movie(rows) and and the active user's ID(the user we are giving recommendations to)
+user_based_recommender <- function(similarity_matrix, profile_matrix, user){
+  #we create a matrix that we'll use to input the movie IDs and the user's predictions
+  #for each movie
+  user_prediction=matrix(0,3952,2)
+  user_prediction[,1]=1:3952
+  #We will use a neighborhood of 30 most similar users
+  #In order to do that we have to sort the similarity of the active user with the rest
+  #of the users in decreasing order and keep the top 30.
+  #We start from index 2 case the first one is the similarity of the user with itself
+  #whch is not usefull.
+  top_30_sim_users=rownames(similarity_matrix[order(similarity_matrix[,user],
+                                                    decreasing = TRUE),])[2:31]
+  #A prediction for a movie is made by calculating the mean value of the ratings of 
+  #the most similar users on that movie using the cosine similarity as a weight on 
+  #each term. 
+  user_prediction[,2]=(profile_matrix[,top_30_sim_users]%*%similarity_matrix[top_30_sim_users,user])/sum(similarity_matrix[top_30_sim_users,user])
+  #We are intrested in returning the predictions and the top 10 recommendations, so 
+  #we create a return list including these two.
+  return_list=list(user_preds=user_prediction, top_10_pred=user_prediction[order(user_prediction[,2],decreasing = TRUE),][1:10,1])
+  return(return_list)
+}
+```
+```{r}
+####User based with binarized User Cosine Similarity Matrix####
+
+#Another recommendation can be done using a different neighborhood of similar users
+#created by applying a similarity threshold on the users
+#A way to do that is by using the binarize function in the 'biclust' library
+#and create a binary matrix having the value 1 for similarities higher than the given
+#threshold and 0 for lower
+install.packages('biclust')
+library(biclust)
+top_sim_users=binarize(cos_sim, threshold = 0.5)
+#Then we just multiply the binary matrix with the original cosine similarity matrix
+#cell by cell and we get a new matrix containing just the cosine similarity values
+#that are greater than the threshold
+cos_sim_2=top_sim_users*cos_sim
+#We need to subtract the diagonal values because we dont need them as they are always 
+#1 and they corrupt the data
+cos_sim_2=cos_sim_2 - diag(6040)
+cos_sim_2[1:10,1:10]
+```
+
+
+```{r}
+####Build second version of the user based filtering(using threshold)####
+
+#We follow the same steps like before with the difference that the cosine similarity
+#matrix we use as input should be formed using the threshold approach followed on the previous chunk.
+user_based_recommender_bin_sim <- function(similarity_matrix, profile_matrix, user){
+  user_prediction=matrix(0,3952,2)
+  user_prediction[,1]=1:3952
+  #We can see that there is no need for the top similar users variable
+  #we go straight to the predictions
+  user_prediction[,2]=(profile_matrix%*%similarity_matrix[,user])/sum(similarity_matrix[,user])
+    
+    return_list=list(user_preds=user_prediction, top_10_pred=user_prediction[order(user_prediction[,2],decreasing = TRUE),][1:10,1])
+    return(return_list)
+}
+```
+
+```{r}
+####Retrieve top 10 recommendations for User 1 (UBCF/knn method)####
+
+#We proceed to the first implementation of the UBCF recommender funtion created by 
+#taking into account the 30 nearest neighbors.
+user_pred=user_based_recommender(cos_sim,profile_matrix_2,1)
+#Retrieve the top 10 recommendations and ten first predictions by calling the return
+#variable which is a list containing these two elements.
+user_pred$top_10_pred
+user_pred$user_preds[1:10,]
+```
+```{r}
+####Retrieve top 10 recommendations for User 1 (UBCF/threshold method)####
+
+#After that we implement the second function which refers to UBCF using users within a
+#threshold similarity.
+#As we see the cosine similarity used is the "binarized" one.
+user_pred_2=user_based_recommender_bin_sim(cos_sim_2,profile_matrix_2,1)
+#And our predictions are...
+user_pred_2$top_10_pred
+user_pred_2$user_preds[1:10,]
+```
+
+```{r}
+#####Attempt on item based colaborative filtering#####
+
+#This method of recommendation is similar to the UBCF, but instead of finding the 
+#cosine similarity for the user we calculate it for the items(movies).
+#The following steps are calculating the item cosine similarity matrix under the same 
+#concept as the user cosine similarity matrix.
+#This time on the dot product we place the transposed profile matrix second cause we
+#need the dot products of the item vectors
+item_sim=profile_matrix_2%*%t(profile_matrix_2)
+diag_elem_2=diag(item_sim)
+norm_elem_2=sqrt(diag_elem_2)%*%t(sqrt(diag_elem_2))
+item_cos_sim=item_sim/norm_elem_2
+item_cos_sim[1:4,1:4] #check
+
+```
+```{r}
+rownames(item_cos_sim[1:4,1:4])
+#For some reason the matrix is missing row and column names so we have to assign them 
+#manually
+```
+```{r}
+rownames(item_cos_sim)=c(1:3952)
+colnames(item_cos_sim)=c(1:3952)
+NaN%in%item_cos_sim
+#some of the movies have 0 cosine similarity so that gives us 0 values for some of the
+#vectors' norms and it ends up giving NaN values inthe item cosine similarity matrix
+#We chose to replace them with 0.
+```
+```{r}
+item_cos_sim[is.nan(item_cos_sim)]=0
+NaN%in%item_cos_sim
+```
+
+```{r}
+#I tried to use the k nearest neighbors method for the IBCF but it required a for loop
+#(like the one below) that had a very long running time.
+#top_30_sim_items=matrix(0,3952,30)
+  #for (i in 1:nrow(top_30_sim_items)) {
+#x=sapply(item_cos_sim[order(item_cos_sim[,1],decreasing = TRUE),], colnames) 
+#x[1:10]
+#rownames(item_cos_sim[2,])
+#    top_30_sim_items[,]=rownames(item_cos_sim[order(item_cos_sim[,i],
+#                                                      decreasing = TRUE),])[2:31]
+    #cat(".")
+      
+  #}
+
+#After trying many different ways to solve the problem, the solution was to use
+#only the threshold approach for the IBCF system
+```
+```{r}
+####Item based with binarized Item Cosine Similarity Matrix####
+
+#using the same binarize function from "biclust" library
+#and following the same steps as in UBCF method
+top_sim_items=binarize(item_cos_sim, threshold = 0.6)
+#create similarity matrix containing 0 for values under certain threshold
+item_sim_2=item_cos_sim*top_sim_items
+#subtracting 1 from the diagonal elements
+item_sim_2=item_sim_2 - diag(3952)
+#checking some basic features
+dim(item_sim_2)#check
+rowSums(item_sim_2)[1:10]#check
+item_sim_2[1:5,1:5]#check
+```
+
+```{r}
+#####Build recommender function for item based collaborative filtering####
+
+#The following function is built on the same way the UBCF/threshold function was built
+#and is returning the rating predictions and the top ten recommendations for a 
+#specific user, using a threshold on item similarities and the 
+#profile matrix that contains the ratings of all users on each movie
+ibcf_recommender <- function(similarity_matrix, profile_matrix, user) {
+  ibcf_prediction=matrix(0,3952,2)
+  ibcf_prediction[,1]=1:3952
+    
+  ibcf_prediction[,2]=(similarity_matrix%*%profile_matrix[,user])[1:3952]/rowSums(similarity_matrix)
+  
+  return_list=list(ibcf_preds=ibcf_prediction, top_10_pred=ibcf_prediction[order(ibcf_prediction[,2],decreasing = TRUE),][1:10,1])
+    return(return_list)
+}
+```
+
+```{r}
+#####Retrieve top 10 recommendations for User 1 (IBCF)####
+
+#Last step is implementing the recommender and receive the predictions and 
+#recommendations
+ibcf_pred=ibcf_recommender(item_sim_2,profile_matrix_2,1)
+ibcf_pred$top_10_pred
+ibcf_pred$ibcf_preds[ibcf_pred$top_10_pred,]
+```
+```{r}
+####Encapsulation####
+
+#After all the above we are ready to gather all previous information and try to build
+#our own recommender system. The recommender should have a function that is used to
+#train the system and another one to recommend movies and get the rating predictions.
+#Next step is the implementation of these functions on the train and test sets to get
+#our results and evaluate our system.
+
+###Build recommender function
+
+#This function will be used to train the recommender.
+#It includes options for all three methods (UBCF,IBCF,Content Based) and it requires
+#as inputs the name of the method, the profile matrix and the genre matrix. The genre
+#matrix is needed only in the case the method is "Content Based".
+recommender=function(method,prof_matr,genre_matr){
+  #We separate the different methods with an if statement
+  if (method=='UBCF'){
+    #inside the statement we follow the steps to create an user cosine similarity
+    #matrix and return a list containing the user similarity and the user cosine similarity
+    sim=t(prof_matr)%*%prof_matr
+    diag_elem=diag(sim)
+    norm_elem=sqrt(diag_elem)%*%t(sqrt(diag_elem))
+    cos_sim=sim/norm_elem
+    return_list=list(sim_matr=sim, cos_sim_matr=cos_sim)
+    return(return_list)
+  }
+  else if(method=='IBCF'){
+    #again we follow the same steps but for the item cosine similarity matrix
+    #and the return list contains the item similarity and cosine similarity
+    item_sim=prof_matr%*%t(prof_matr)
+    diag_elem=diag(item_sim)
+    norm_elem=sqrt(diag_elem)%*%t(sqrt(diag_elem))
+    item_cos_sim=item_sim/norm_elem
+    rownames(item_cos_sim)=c(1:nrow(prof_matr))
+    colnames(item_cos_sim)=c(1:nrow(prof_matr))
+    item_cos_sim[is.nan(item_cos_sim)]=0
+    return_list=list(sim_matr=item_sim, cos_sim_matr=item_cos_sim)
+    return(return_list)
+  }
+  else if(method=='CB'){
+    #The training of the content based recommender is simply the normalization of
+    #the genre matrix.
+    #The genre matrix contains the value 1 if a movie is of that genre and 0 if not.
+    #As long as the values are only 0 or 1, to calculate the norms of the vectors
+    #we just need to calculate the squareroot of the sum of each row 
+    genre_matrix_norm=matrix(0,nrow(prof_matr),ncol(genre_matr))
+    sum_row=NULL
+    for (i in 1:nrow(genre_matr)){
+      sum_row[i]=0
+      sum_row[i]=sum(genre_matr[i,])
+    }
+    # this could me ammited and written in one line as rowSums(genre_matr)
+    genre_matrix_norm=genre_matr/sqrt(sum_row)
+    genre_matrix_norm[is.na(genre_matrix_norm)]=0
+    return_list=list(genre_matr_norm=genre_matrix_norm)
+    return(return_list)
+  }
+}
+```
+```{r}
+#When we have new users we will be needing to calculate the similarity
+#of these new users with the old.
+#For that reason I create a funtion that gives us the new user cosine similarity
+#The use of this function will be just to test how that new cosine similarity
+#is working. We will include the calculation of it in the prediction function
+#as it is not needed to run for every method.
+#The inputs are, the new user(which has to be rows as users and columns as movies),
+#the pofile matrix of the old users and the recommender which will provide us with
+#the necessary similarity matrices.
+new_cos_sim=function(new_user,prof_matr,recommender){
+  #the process is similar to the cosine similarity
+  sim=new_user%*%prof_matr
+  norm_elem=sqrt(new_user%*%t(new_user))%*%sqrt(t(diag(recommender$sim_matr)))
+  n_cos_sim=sim/norm_elem
+  return(n_cos_sim)
+}
+```
+```{r}
+####checking new_cos_sim function
+#First we have to train the recommender
+recommender1=recommender('UBCF',profile_matrix_2,genre_matrix_upd)
+#We simply chose the first user from our dataset and we change the dimension of
+#that vector
+us_1=t(profile_matrix_2[,1])
+dim(us_1)
+```
+```{r}
+#We apply the new_cos_sim function and get the conclusions
+ncs=new_cos_sim(us_1,profile_matrix_2,recommender1)
+tncs=t(ncs)
+#we transpose the vector so we make it a column
+tncs[1:10,1]
+rownames(tncs)[1:10]
+```
+```{r}
+#there are existing row names so we save them
+k_sim_us=rownames(tncs)
+```
+```{r}
+#We order the new similarities and compare it with the cosine similarity matrix to see
+#if we get the right result
+x=order(tncs[,1],decreasing = TRUE)
+x[1:10]
+y=order(cos_sim[,1],decreasing = TRUE)[1:10]
+y
+```
+```{r}
+#Then we sort the similarities and get the top 10 of them 
+ksu=(tncs[order(tncs[,1],decreasing = TRUE)])
+ksu[1:10]
+```
+The function works so we can use it for the rest of the work
